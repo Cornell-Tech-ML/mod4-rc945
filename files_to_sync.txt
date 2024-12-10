@@ -20,5 +20,6 @@ minitorch/optim.py
 minitorch/tensor_ops.py
 minitorch/fast_ops.py
 minitorch/cuda_ops.py
+project/run_fast_tensor.py
 project/parallel_check.py
 tests/test_tensor_general.py
