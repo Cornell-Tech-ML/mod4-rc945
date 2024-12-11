@@ -130,3 +130,7 @@ dmypy.json
 *.\#*
 data/
 pyodideglove/
+
+# Large files
+glove/glove.6B.zip
+glove/glove.6B.50d.txt
