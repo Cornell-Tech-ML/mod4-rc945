@@ -1,15 +1,16 @@
 import random
-import zipfile
-import os
+
 import embeddings
 import minitorch
 from datasets import load_dataset
 
 BACKEND = minitorch.TensorBackend(minitorch.FastOps)
 
+
 def RParam(*shape):
     r = 0.1 * (minitorch.rand(shape, backend=BACKEND) - 0.5)
     return minitorch.Parameter(r)
+
 
 class Linear(minitorch.Module):
     def __init__(self, in_size, out_size):
@@ -24,6 +25,7 @@ class Linear(minitorch.Module):
             x.view(batch, in_size) @ self.weights.value.view(in_size, self.out_size)
         ).view(batch, self.out_size) + self.bias.value
 
+
 class Conv1d(minitorch.Module):
     def __init__(self, in_channels, out_channels, kernel_width):
         super().__init__()
@@ -31,9 +33,24 @@ class Conv1d(minitorch.Module):
         self.bias = RParam(1, out_channels, 1)
 
     def forward(self, input):
+        # TODO: Implement for Task 4.5.
         return minitorch.conv1d(input, self.weights.value) + self.bias.value
 
+
 class CNNSentimentKim(minitorch.Module):
+    """
+    Implement a CNN for Sentiment classification based on Y. Kim 2014.
+
+    This model should implement the following procedure:
+
+    1. Apply a 1d convolution with input_channels=embedding_dim
+        feature_map_size=100 output channels and [3, 4, 5]-sized kernels
+        followed by a non-linear activation function (the paper uses tanh, we apply a ReLu)
+    2. Apply max-over-time across each feature map
+    3. Apply a Linear to size C (number of classes) followed by a ReLU and Dropout with rate 25%
+    4. Apply a sigmoid over the class dimension.
+    """
+
     def __init__(
         self,
         feature_map_size=100,
@@ -43,6 +60,7 @@ class CNNSentimentKim(minitorch.Module):
     ):
         super().__init__()
         self.feature_map_size = feature_map_size
+        # TODO: Implement for Task 4.5.
         self.dropout = dropout
         self.conv1d1 = Conv1d(embedding_size, feature_map_size, filter_sizes[0])
         self.conv1d2 = Conv1d(embedding_size, feature_map_size, filter_sizes[1])
@@ -50,6 +68,10 @@ class CNNSentimentKim(minitorch.Module):
         self.linear = Linear(self.feature_map_size, 1)
 
     def forward(self, embeddings):
+        """
+        embeddings tensor: [batch x sentence length x embedding dim]
+        """
+        # TODO: Implement for Task 4.5.
         embeddings = embeddings.permute(0, 2, 1)
         conv1 = self.conv1d1.forward(embeddings).relu()
         conv2 = self.conv1d2.forward(embeddings).relu()
@@ -61,6 +83,8 @@ class CNNSentimentKim(minitorch.Module):
         out = self.linear.forward(out)
         return out.sigmoid().view(embeddings.shape[0])
 
+
+# Evaluation helper methods
 def get_predictions_array(y_true, model_output):
     predictions_array = []
     for j, logit in enumerate(model_output.to_numpy()):
@@ -72,6 +96,7 @@ def get_predictions_array(y_true, model_output):
         predictions_array.append((true_label, predicted_label, logit))
     return predictions_array
 
+
 def get_accuracy(predictions_array):
     correct = 0
     for (y_true, y_pred, logit) in predictions_array:
@@ -79,7 +104,9 @@ def get_accuracy(predictions_array):
             correct += 1
     return correct / len(predictions_array)
 
+
 best_val = 0.0
+
 
 def default_log_fn(
     epoch,
@@ -98,6 +125,7 @@ def default_log_fn(
     if len(validation_predictions) > 0:
         print(f"Validation accuracy: {validation_accuracy[-1]:.2%}")
         print(f"Best Valid accuracy: {best_val:.2%}")
+
 
 class SentenceSentimentTrain:
     def __init__(self, model):
@@ -121,6 +149,7 @@ class SentenceSentimentTrain:
         validation_accuracy = []
         for epoch in range(1, max_epochs + 1):
             total_loss = 0.0
+
             model.train()
             train_predictions = []
             batch_size = min(batch_size, n_training_samples)
@@ -135,13 +164,20 @@ class SentenceSentimentTrain:
                 )
                 x.requires_grad_(True)
                 y.requires_grad_(True)
+                # Forward
                 out = model.forward(x)
                 prob = (out * y) + (out - 1.0) * (y - 1.0)
                 loss = -(prob.log() / y.shape[0]).sum()
                 loss.view(1).backward()
+
+                # Save train predictions
                 train_predictions += get_predictions_array(y, out)
                 total_loss += loss[0]
+
+                # Update
                 optim.step()
+
+            # Evaluate on validation set at the end of the epoch
             validation_predictions = []
             if data_val is not None:
                 (X_val, y_val) = data_val
@@ -158,6 +194,7 @@ class SentenceSentimentTrain:
                 validation_predictions += get_predictions_array(y, out)
                 validation_accuracy.append(get_accuracy(validation_predictions))
                 model.train()
+
             train_accuracy.append(get_accuracy(train_predictions))
             losses.append(total_loss)
             log_fn(
@@ -171,28 +208,37 @@ class SentenceSentimentTrain:
             )
             total_loss = 0.0
 
+
 def encode_sentences(
     dataset, N, max_sentence_len, embeddings_lookup, unk_embedding, unks
 ):
     Xs = []
     ys = []
     for sentence in dataset["sentence"][:N]:
+        # TODO: move padding to training code
         sentence_embedding = [[0] * embeddings_lookup.d_emb] * max_sentence_len
         for i, w in enumerate(sentence.split()):
             sentence_embedding[i] = [0] * embeddings_lookup.d_emb
             if w in embeddings_lookup:
                 sentence_embedding[i][:] = embeddings_lookup.emb(w)
             else:
+                # use random embedding for unks
                 unks.add(w)
                 sentence_embedding[i][:] = unk_embedding
         Xs.append(sentence_embedding)
+
+    # load labels
     ys = dataset["label"][:N]
     return Xs, ys
 
+
 def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
+
+    #  Determine max sentence length for padding
     max_sentence_len = 0
     for sentence in dataset["train"]["sentence"] + dataset["validation"]["sentence"]:
         max_sentence_len = max(max_sentence_len, len(sentence.split()))
+
     unks = set()
     unk_embedding = [
         0.1 * (random.random() - 0.5) for i in range(pretrained_embeddings.d_emb)
@@ -214,54 +260,28 @@ def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
         unks,
     )
     print(f"missing pre-trained embedding for {len(unks)} unknown words")
+
     return (X_train, y_train), (X_val, y_val)
 
-dataset = load_dataset("glue", "sst2")
 
-class GloveEmbedding:
-    def __init__(self, filepath, d_emb=50):
-        self.filepath = filepath
-        self.d_emb = d_emb
-        self.word2emb = {}
-        self.load_embeddings()
+if __name__ == "__main__":
+    train_size = 450
+    validation_size = 100
+    learning_rate = 0.01
+    max_epochs = 250
 
-    def load_embeddings(self):
-        print("Loading GloVe embeddings...")
-        with open(self.filepath, 'r', encoding='utf-8') as f:
-            for line in f:
-                values = line.split()
-                word = values[0]
-                vector = [float(val) for val in values[1:]]
-                self.word2emb[word] = vector
-        print(f"Loaded {len(self.word2emb)} word vectors")
-
-    def __contains__(self, word):
-        return word in self.word2emb
-
-    def emb(self, word):
-        return self.word2emb[word]
-
-try:
-    glove_path = "glove/glove.6B.50d.txt"
-    pretrained_embeddings = GloveEmbedding(glove_path, d_emb=50)
-except FileNotFoundError:
-    print("Error: GloVe embeddings file not found at:", glove_path)
-    print("Please specify the correct path to glove.6B.50d.txt")
-    exit(1)
-
-(X_train, y_train), (X_val, y_val) = encode_sentiment_data(
-    dataset,
-    pretrained_embeddings,
-    N_train=450,
-    N_val=100
-)
-
-model_trainer = SentenceSentimentTrain(
-    CNNSentimentKim(feature_map_size=100, filter_sizes=[3, 4, 5], dropout=0.25)
-)
-model_trainer.train(
-    (X_train, y_train),
-    learning_rate=0.01,
-    max_epochs=250,
-    data_val=(X_val, y_val),
-)
+    (X_train, y_train), (X_val, y_val) = encode_sentiment_data(
+        load_dataset("glue", "sst2"),
+        embeddings.GloveEmbedding("wikipedia_gigaword", d_emb=50, show_progress=True),
+        train_size,
+        validation_size,
+    )
+    model_trainer = SentenceSentimentTrain(
+        CNNSentimentKim(feature_map_size=100, filter_sizes=[3, 4, 5], dropout=0.25)
+    )
+    model_trainer.train(
+        (X_train, y_train),
+        learning_rate,
+        max_epochs=max_epochs,
+        data_val=(X_val, y_val),
+    )
