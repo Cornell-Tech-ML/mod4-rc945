@@ -1,5 +1,4 @@
 import random
-
 import embeddings
 import minitorch
 from datasets import load_dataset
@@ -33,7 +32,6 @@ class Conv1d(minitorch.Module):
         self.bias = RParam(1, out_channels, 1)
 
     def forward(self, input):
-        # TODO: Implement for Task 4.5.
         return minitorch.conv1d(input, self.weights.value) + self.bias.value
 
 
@@ -60,7 +58,6 @@ class CNNSentimentKim(minitorch.Module):
     ):
         super().__init__()
         self.feature_map_size = feature_map_size
-        # TODO: Implement for Task 4.5.
         self.dropout = dropout
         self.conv1d1 = Conv1d(embedding_size, feature_map_size, filter_sizes[0])
         self.conv1d2 = Conv1d(embedding_size, feature_map_size, filter_sizes[1])
@@ -71,7 +68,6 @@ class CNNSentimentKim(minitorch.Module):
         """
         embeddings tensor: [batch x sentence length x embedding dim]
         """
-        # TODO: Implement for Task 4.5.
         embeddings = embeddings.permute(0, 2, 1)
         conv1 = self.conv1d1.forward(embeddings).relu()
         conv2 = self.conv1d2.forward(embeddings).relu()
@@ -215,26 +211,20 @@ def encode_sentences(
     Xs = []
     ys = []
     for sentence in dataset["sentence"][:N]:
-        # TODO: move padding to training code
         sentence_embedding = [[0] * embeddings_lookup.d_emb] * max_sentence_len
         for i, w in enumerate(sentence.split()):
             sentence_embedding[i] = [0] * embeddings_lookup.d_emb
             if w in embeddings_lookup:
                 sentence_embedding[i][:] = embeddings_lookup.emb(w)
             else:
-                # use random embedding for unks
                 unks.add(w)
                 sentence_embedding[i][:] = unk_embedding
         Xs.append(sentence_embedding)
-
-    # load labels
     ys = dataset["label"][:N]
     return Xs, ys
 
 
 def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
-
-    #  Determine max sentence length for padding
     max_sentence_len = 0
     for sentence in dataset["train"]["sentence"] + dataset["validation"]["sentence"]:
         max_sentence_len = max(max_sentence_len, len(sentence.split()))
@@ -260,7 +250,6 @@ def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
         unks,
     )
     print(f"missing pre-trained embedding for {len(unks)} unknown words")
-
     return (X_train, y_train), (X_val, y_val)
 
 
